@@ -1,24 +1,14 @@
 
-# Python
-__pycache__/
-*.py[cod]
 .venv/
 venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
 .env
 .env.*
 !.env.example
-
-# Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
-*.tfplan
 crash.log
-override.tf
-override.tf.json
 
-# IDE and OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
