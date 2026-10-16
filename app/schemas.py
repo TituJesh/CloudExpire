@@ -1,4 +1,4 @@
-
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, StringConstraints
@@ -21,3 +21,20 @@ class ResourceCreate(BaseModel):
     resource_type: Literal["ec2"]
     ttl_hours: int = Field(ge=1, le=24)
     instance_type: Literal["t3.micro", "t3.small"] = "t3.micro"
+
+class ResourceRecord(BaseModel):
+    resource_id: str
+    name: str
+    resource_type: Literal["ec2"]
+    ttl_hours: int
+    instance_type: Literal["t3.micro", "t3.small"]
+    created_at: datetime
+    expires_at: datetime
+    status: Literal[
+        "REQUESTED",
+        "ACTIVE",
+        "CLEANUP_PENDING",
+        "CLEANED",
+        "FAILED",
+    ]
+    aws_resource_id: str | None = None
