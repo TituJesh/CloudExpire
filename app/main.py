@@ -1,15 +1,14 @@
 
-from datetime import datetime, timezone
+from fastapi import FastAPI, HTTPException, status
 
-from fastapi import FastAPI
-
-from app.schemas import ResourceCreate
-from app.services.expiry import calculate_expiry
+from app.repositories.resource_repository import resource_repository
+from app.schemas import ResourceCreate, ResourceRecord
+from app.services.resource_service import create_resource_record
 
 app = FastAPI(
     title="CloudExpire",
     description="Automated temporary AWS resource lifecycle manager",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 
@@ -21,17 +20,28 @@ def health_check():
     }
 
 
-@app.post("/resources/preview")
-def preview_resource(request: ResourceCreate):
-    expires_at = calculate_expiry(request.ttl_hours)
+@app.post(
+    "/resources",
+    response_model=ResourceRecord,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_resource(request: ResourceCreate):
+    return create_resource_record(request)
 
-    return {
-        "name": request.name,
-        "resource_type": request.resource_type,
-        "instance_type": request.instance_type,
-        "ttl_hours": request.ttl_hours,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "expires_at": expires_at.isoformat(),
-        "status": "PREVIEW",
-        "message": "Preview only. No AWS resource was created.",
-    }
+
+@app.get("/resources", response_model=list[ResourceRecord])
+def list_resources():
+    return resource_repository.list_all()
+
+
+@app.get("/resources/{resource_id}", response_model=ResourceRecord)
+def get_resource(resource_id: str):
+    resource = resource_repository.get(resource_id)
+
+    if resource is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Resource not found",
+        )
+
+    return resource
