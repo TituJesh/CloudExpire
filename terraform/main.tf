@@ -1,0 +1,32 @@
+
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+resource "aws_dynamodb_table" "resources" {
+  name         = "cloudexpire-resources"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "resource_id"
+
+  attribute {
+    name = "resource_id"
+    type = "S"
+  }
+
+  tags = {
+    Project     = "CloudExpire"
+    Environment = "Development"
+    ManagedBy   = "Terraform"
+  }
+}
