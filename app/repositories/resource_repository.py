@@ -28,6 +28,13 @@ class InMemoryResourceRepository:
     def clear(self) -> None:
         self._resources.clear()
 
+    def update(self, resource: ResourceRecord) -> ResourceRecord:
+        if resource.resource_id not in self._resources:
+            raise ValueError("Resource not found.")
+
+        self._resources[resource.resource_id] = resource
+        return resource
+
 
 class DynamoDBResourceRepository:
     """Persistent resource storage backed by Amazon DynamoDB."""
@@ -77,6 +84,13 @@ class DynamoDBResourceRepository:
             scan_kwargs["ExclusiveStartKey"] = last_key
 
         return resources
+
+    def update(self, resource: ResourceRecord) -> ResourceRecord:
+        self.table.put_item(
+            Item=resource.model_dump(mode="json"),
+            ConditionExpression="attribute_exists(resource_id)",
+        )
+        return resource
 
 
 def get_repository():
