@@ -7,6 +7,7 @@ def test_lambda_handler_returns_cleanup_result(monkeypatch):
     handler_path = (
         Path(__file__).resolve().parents[1]
         / "lambda"
+        / "package"
         / "cleanup_handler.py"
     )
 
