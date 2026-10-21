@@ -8,21 +8,28 @@ from app.repositories.resource_repository import resource_repository
 
 
 def find_expired_resources():
-    """Return active resources whose expiry time has passed."""
+    """Find expired resources awaiting termination or cleanup confirmation."""
     now = datetime.now(timezone.utc)
 
     return [
         resource
         for resource in resource_repository.list_all()
-        if resource.status == "ACTIVE"
+        if resource.status in ("ACTIVE", "CLEANUP_PENDING")
         and resource.expires_at <= now
         and resource.aws_resource_id is not None
     ]
 
 
 def cleanup_expired_resources():
-    """Terminate expired CloudExpire instances only when explicitly enabled."""
-    if os.getenv("CLOUDEXPIRE_ALLOW_EC2_TERMINATION", "false").lower() != "true":
+    """Safely process expired CloudExpire EC2 resources."""
+    # Read DynamoDB even when termination is disabled.
+    expired_resources = find_expired_resources()
+
+    # Safe dry-run mode: inspect records, but never contact EC2
+    # or terminate instances.
+    if os.getenv(
+        "CLOUDEXPIRE_ALLOW_EC2_TERMINATION", "false"
+    ).lower() != "true":
         return {"terminated": 0, "skipped": True}
 
     region = os.getenv("AWS_REGION", "ap-south-1")
@@ -30,7 +37,7 @@ def cleanup_expired_resources():
 
     terminated = 0
 
-    for resource in find_expired_resources():
+    for resource in expired_resources:
         response = ec2.describe_instances(
             InstanceIds=[resource.aws_resource_id]
         )
@@ -41,6 +48,7 @@ def cleanup_expired_resources():
             for instance in reservation.get("Instances", [])
         ]
 
+        # Do not assume a missing response proves cleanup succeeded.
         if not instances:
             continue
 
@@ -50,7 +58,8 @@ def cleanup_expired_resources():
             for tag in instance.get("Tags", [])
         }
 
-        # Never terminate an instance unless its ownership matches the record.
+        # Require all three ownership tags before changing or terminating
+        # an AWS resource.
         if (
             tags.get("Project") != "CloudExpire"
             or tags.get("ManagedBy") != "CloudExpire"
@@ -58,6 +67,35 @@ def cleanup_expired_resources():
         ):
             continue
 
+        state = instance.get("State", {}).get("Name", "unknown")
+
+        if state not in (
+            "pending",
+            "running",
+            "stopping",
+            "stopped",
+            "shutting-down",
+            "terminated",
+        ):
+            continue
+
+        if state == "terminated":
+            updated_resource = resource.model_copy(
+                update={"status": "CLEANED"}
+            )
+            resource_repository.update(updated_resource)
+            continue
+
+        if state in ("shutting-down", "stopping"):
+            if resource.status != "CLEANUP_PENDING":
+                updated_resource = resource.model_copy(
+                    update={"status": "CLEANUP_PENDING"}
+                )
+                resource_repository.update(updated_resource)
+            continue
+
+        # Request termination for eligible instances. If AWS raises an
+        # error, let it surface rather than marking cleanup as successful.
         ec2.terminate_instances(
             InstanceIds=[resource.aws_resource_id]
         )
