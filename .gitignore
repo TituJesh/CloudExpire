@@ -12,3 +12,20 @@ __pycache__/
 *.tfstate.*
 crash.log
 
+
+# Generated AWS Lambda deployment package
+lambda/package/
+terraform/cloudexpire-cleanup.zip
+
+# Terraform generated files
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/crash.log
+
+# Python cache files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
