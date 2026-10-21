@@ -46,6 +46,7 @@ def test_cleanup_terminates_matching_expired_instance(monkeypatch):
             return {
                 "Reservations": [{
                     "Instances": [{
+                        "State": {"Name": "running"},
                         "InstanceId": resource.aws_resource_id,
                         "Tags": [
                             {"Key": "Project", "Value": "CloudExpire"},
