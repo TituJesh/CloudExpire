@@ -134,7 +134,7 @@ resource "aws_lambda_function" "cleanup" {
     variables = {
       CLOUDEXPIRE_STORAGE               = "dynamodb"
       DYNAMODB_TABLE_NAME               = aws_dynamodb_table.resources.name
-      CLOUDEXPIRE_ALLOW_EC2_TERMINATION = "false"
+      CLOUDEXPIRE_ALLOW_EC2_TERMINATION = "true"
     }
   }
 
