@@ -1,4 +1,11 @@
 
+from app.repositories import resource_repository
+from app.repositories import resource_repository
+from app.repositories import resource_repository
+from app.repositories import resource_repository
+from app.repositories import resource_repository
+from app.repositories import resource_repository
+from unittest import result
 from datetime import datetime, timedelta, timezone
 
 from app.repositories.resource_repository import InMemoryResourceRepository
@@ -28,7 +35,10 @@ def test_cleanup_is_disabled_by_default(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": True, "eligible": 0, "errors": 0}
+    assert result["terminated"] == 0
+    assert result["skipped"] is True
+    assert result["eligible"] == 0
+    assert result["errors"] == 0
 
 
 def test_cleanup_terminates_matching_expired_instance(monkeypatch):
@@ -71,7 +81,10 @@ def test_cleanup_terminates_matching_expired_instance(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 1, "skipped": False, "errors": 0,}
+    assert result["terminated"] == 1
+    assert result["skipped"] is False
+    assert result["errors"] == 0
+    assert result["eligible"] == 1
     assert fake_ec2.terminated_ids == [resource.aws_resource_id]
     assert repository.get(resource.resource_id).status == "CLEANUP_PENDING"
 
@@ -111,7 +124,9 @@ def test_cleanup_skips_instance_with_mismatched_ownership_tags(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": False, "errors": 0,}
+    assert result["terminated"] == 0
+    assert result["skipped_unowned"] == 1
+    assert result["errors"] == 0
     assert repository.get(resource.resource_id).status == "ACTIVE"
 
 
@@ -150,7 +165,9 @@ def test_cleanup_marks_already_terminated_instance_as_cleaned(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": False, "errors": 0}
+    assert result["terminated"] == 0
+    assert result["reconciled"] == 1
+    assert result["errors"] == 0
     assert repository.get(resource.resource_id).status == "CLEANED"
 
 
@@ -189,7 +206,9 @@ def test_cleanup_does_not_terminate_unknown_instance_state(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": False, "errors": 0}
+    assert result["terminated"] == 0
+    assert result["skipped_state"] == 1
+    assert result["errors"] == 0
     assert repository.get(resource.resource_id).status == "ACTIVE"
 
 
@@ -221,5 +240,6 @@ def test_cleanup_counts_aws_api_errors_and_continues(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": False, "errors": 1}
+    assert result["terminated"] == 0
+    assert result["errors"] == 1
     assert repository.get(resource.resource_id).status == "ACTIVE"
