@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from app.repositories.resource_repository import InMemoryResourceRepository
 from app.schemas import ResourceRecord
 from app.services import cleanup_service
+from botocore.exceptions import ClientError
 
 
 def make_expired_resource():
@@ -27,7 +28,7 @@ def test_cleanup_is_disabled_by_default(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": True}
+    assert result == {"terminated": 0, "skipped": True, "eligible": 0, "errors": 0}
 
 
 def test_cleanup_terminates_matching_expired_instance(monkeypatch):
@@ -70,7 +71,7 @@ def test_cleanup_terminates_matching_expired_instance(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 1, "skipped": False}
+    assert result == {"terminated": 1, "skipped": False, "errors": 0,}
     assert fake_ec2.terminated_ids == [resource.aws_resource_id]
     assert repository.get(resource.resource_id).status == "CLEANUP_PENDING"
 
@@ -110,5 +111,115 @@ def test_cleanup_skips_instance_with_mismatched_ownership_tags(monkeypatch):
 
     result = cleanup_service.cleanup_expired_resources()
 
-    assert result == {"terminated": 0, "skipped": False}
+    assert result == {"terminated": 0, "skipped": False, "errors": 0,}
+    assert repository.get(resource.resource_id).status == "ACTIVE"
+
+
+def test_cleanup_marks_already_terminated_instance_as_cleaned(monkeypatch):
+    repository = InMemoryResourceRepository()
+    monkeypatch.setattr(cleanup_service, "resource_repository", repository)
+    monkeypatch.setenv("CLOUDEXPIRE_ALLOW_EC2_TERMINATION", "true")
+
+    resource = make_expired_resource()
+    repository.create(resource)
+
+    class FakeEC2:
+        def describe_instances(self, InstanceIds):
+            return {
+                "Reservations": [{
+                    "Instances": [{
+                        "InstanceId": resource.aws_resource_id,
+                        "State": {"Name": "terminated"},
+                        "Tags": [
+                            {"Key": "Project", "Value": "CloudExpire"},
+                            {"Key": "ManagedBy", "Value": "CloudExpire"},
+                            {"Key": "ResourceId", "Value": resource.resource_id},
+                        ],
+                    }]
+                }]
+            }
+
+        def terminate_instances(self, InstanceIds):
+            raise AssertionError("Already-terminated instance must not be terminated again")
+
+    monkeypatch.setattr(
+        cleanup_service.boto3,
+        "client",
+        lambda *args, **kwargs: FakeEC2(),
+    )
+
+    result = cleanup_service.cleanup_expired_resources()
+
+    assert result == {"terminated": 0, "skipped": False, "errors": 0}
+    assert repository.get(resource.resource_id).status == "CLEANED"
+
+
+def test_cleanup_does_not_terminate_unknown_instance_state(monkeypatch):
+    repository = InMemoryResourceRepository()
+    monkeypatch.setattr(cleanup_service, "resource_repository", repository)
+    monkeypatch.setenv("CLOUDEXPIRE_ALLOW_EC2_TERMINATION", "true")
+
+    resource = make_expired_resource()
+    repository.create(resource)
+
+    class FakeEC2:
+        def describe_instances(self, InstanceIds):
+            return {
+                "Reservations": [{
+                    "Instances": [{
+                        "InstanceId": resource.aws_resource_id,
+                        "State": {"Name": "unknown"},
+                        "Tags": [
+                            {"Key": "Project", "Value": "CloudExpire"},
+                            {"Key": "ManagedBy", "Value": "CloudExpire"},
+                            {"Key": "ResourceId", "Value": resource.resource_id},
+                        ],
+                    }]
+                }]
+            }
+
+        def terminate_instances(self, InstanceIds):
+            raise AssertionError("Unknown-state instance must not be terminated")
+
+    monkeypatch.setattr(
+        cleanup_service.boto3,
+        "client",
+        lambda *args, **kwargs: FakeEC2(),
+    )
+
+    result = cleanup_service.cleanup_expired_resources()
+
+    assert result == {"terminated": 0, "skipped": False, "errors": 0}
+    assert repository.get(resource.resource_id).status == "ACTIVE"
+
+
+def test_cleanup_counts_aws_api_errors_and_continues(monkeypatch):
+    repository = InMemoryResourceRepository()
+    monkeypatch.setattr(cleanup_service, "resource_repository", repository)
+    monkeypatch.setenv("CLOUDEXPIRE_ALLOW_EC2_TERMINATION", "true")
+
+    resource = make_expired_resource()
+    repository.create(resource)
+
+    class FakeEC2:
+        def describe_instances(self, InstanceIds):
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "UnauthorizedOperation",
+                        "Message": "Test permission failure",
+                    }
+                },
+                "DescribeInstances",
+            )
+
+    monkeypatch.setattr(
+        cleanup_service.boto3,
+        "client",
+        lambda *args, **kwargs: FakeEC2(),
+    )
+
+    result = cleanup_service.cleanup_expired_resources()
+
+    assert result == {"terminated": 0, "skipped": False, "errors": 1}
     assert repository.get(resource.resource_id).status == "ACTIVE"
