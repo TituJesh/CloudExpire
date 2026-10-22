@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 from app.repositories.resource_repository import resource_repository
 
@@ -22,25 +23,33 @@ def find_expired_resources():
 
 def cleanup_expired_resources():
     """Safely process expired CloudExpire EC2 resources."""
-    # Read DynamoDB even when termination is disabled.
     expired_resources = find_expired_resources()
 
-    # Safe dry-run mode: inspect records, but never contact EC2
-    # or terminate instances.
+    # Read-only mode: never contact EC2 or terminate instances.
     if os.getenv(
         "CLOUDEXPIRE_ALLOW_EC2_TERMINATION", "false"
     ).lower() != "true":
-        return {"terminated": 0, "skipped": True}
+        return {
+            "terminated": 0,
+            "skipped": True,
+            "eligible": len(expired_resources),
+            "errors": 0,
+        }
 
     region = os.getenv("AWS_REGION", "ap-south-1")
     ec2 = boto3.client("ec2", region_name=region)
 
     terminated = 0
+    errors = 0
 
     for resource in expired_resources:
-        response = ec2.describe_instances(
-            InstanceIds=[resource.aws_resource_id]
-        )
+        try:
+            response = ec2.describe_instances(
+                InstanceIds=[resource.aws_resource_id]
+            )
+        except (ClientError, BotoCoreError):
+            errors += 1
+            continue
 
         instances = [
             instance
@@ -48,7 +57,7 @@ def cleanup_expired_resources():
             for instance in reservation.get("Instances", [])
         ]
 
-        # Do not assume a missing response proves cleanup succeeded.
+        # A missing response is not proof that cleanup succeeded.
         if not instances:
             continue
 
@@ -58,8 +67,6 @@ def cleanup_expired_resources():
             for tag in instance.get("Tags", [])
         }
 
-        # Require all three ownership tags before changing or terminating
-        # an AWS resource.
         if (
             tags.get("Project") != "CloudExpire"
             or tags.get("ManagedBy") != "CloudExpire"
@@ -69,41 +76,39 @@ def cleanup_expired_resources():
 
         state = instance.get("State", {}).get("Name", "unknown")
 
-        if state not in (
-            "pending",
-            "running",
-            "stopping",
-            "stopped",
-            "shutting-down",
-            "terminated",
-        ):
-            continue
-
         if state == "terminated":
-            updated_resource = resource.model_copy(
-                update={"status": "CLEANED"}
+            resource_repository.update(
+                resource.model_copy(update={"status": "CLEANED"})
             )
-            resource_repository.update(updated_resource)
             continue
 
         if state in ("shutting-down", "stopping"):
             if resource.status != "CLEANUP_PENDING":
-                updated_resource = resource.model_copy(
-                    update={"status": "CLEANUP_PENDING"}
+                resource_repository.update(
+                    resource.model_copy(
+                        update={"status": "CLEANUP_PENDING"}
+                    )
                 )
-                resource_repository.update(updated_resource)
             continue
 
-        # Request termination for eligible instances. If AWS raises an
-        # error, let it surface rather than marking cleanup as successful.
-        ec2.terminate_instances(
-            InstanceIds=[resource.aws_resource_id]
-        )
+        if state not in ("pending", "running", "stopped"):
+            continue
 
-        updated_resource = resource.model_copy(
-            update={"status": "CLEANUP_PENDING"}
+        try:
+            ec2.terminate_instances(
+                InstanceIds=[resource.aws_resource_id]
+            )
+        except (ClientError, BotoCoreError):
+            errors += 1
+            continue
+
+        resource_repository.update(
+            resource.model_copy(update={"status": "CLEANUP_PENDING"})
         )
-        resource_repository.update(updated_resource)
         terminated += 1
 
-    return {"terminated": terminated, "skipped": False}
+    return {
+        "terminated": terminated,
+        "skipped": False,
+        "errors": errors,
+    }
