@@ -35,6 +35,7 @@ def launch_ec2_instance(
         InstanceType=instance_type,
         MinCount=1,
         MaxCount=1,
+        ClientToken=resource_id,
         SubnetId=subnet_id,
         SecurityGroupIds=[security_group_id],
         TagSpecifications=[

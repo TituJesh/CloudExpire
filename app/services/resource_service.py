@@ -1,4 +1,5 @@
 
+import logging
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -7,6 +8,8 @@ from app.repositories.resource_repository import resource_repository
 from app.schemas import ResourceCreate, ResourceRecord
 from app.services.expiry import calculate_expiry
 from app.services.ec2_service import launch_ec2_instance
+
+logger = logging.getLogger(__name__)
 
 
 def create_resource_record(request: ResourceCreate) -> ResourceRecord:
@@ -25,7 +28,7 @@ def create_resource_record(request: ResourceCreate) -> ResourceRecord:
         aws_resource_id=None,
     )
 
-    # Save the record before attempting any AWS provisioning.
+    # Persist the record before attempting AWS provisioning.
     resource_repository.create(resource)
 
     provisioning_enabled = (
@@ -41,16 +44,46 @@ def create_resource_record(request: ResourceCreate) -> ResourceRecord:
             resource_id=resource.resource_id,
             expires_at=resource.expires_at.isoformat(),
         )
-
-        updated_resource = resource.model_copy(
-            update={
-                "aws_resource_id": instance_id,
-                "status": "ACTIVE",
-            }
-        )
-        return resource_repository.update(updated_resource)
-
     except Exception:
+        # No instance ID was returned. Preserve existing launch-failure behavior.
         failed_resource = resource.model_copy(update={"status": "FAILED"})
-        resource_repository.update(failed_resource)
+        try:
+            resource_repository.update(failed_resource)
+        except Exception:
+            logger.exception(
+                "Could not persist FAILED status for resource %s",
+                resource.resource_id,
+            )
         raise
+
+    active_resource = resource.model_copy(
+        update={
+            "aws_resource_id": instance_id,
+            "status": "ACTIVE",
+        }
+    )
+
+    try:
+        return resource_repository.update(active_resource)
+    except Exception:
+        # EC2 exists now. Never mark this record FAILED without its instance ID.
+        logger.exception(
+            "Could not persist ACTIVE status for resource %s, instance %s; "
+            "retrying persistence",
+            resource.resource_id,
+            instance_id,
+        )
+
+        try:
+            # Retry storing the same instance ID so cleanup can track it.
+            return resource_repository.update(active_resource)
+        except Exception:
+            logger.critical(
+                "CRITICAL: EC2 instance %s was launched for CloudExpire "
+                "resource %s, but its ID could not be persisted. "
+                "Manual reconciliation may be required.",
+                instance_id,
+                resource.resource_id,
+                exc_info=True,
+            )
+            raise

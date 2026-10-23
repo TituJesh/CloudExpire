@@ -170,3 +170,48 @@ def test_failed_ec2_provisioning_marks_resource_failed(client, monkeypatch):
     assert len(failed_records) == 1
     assert failed_records[0]["status"] == "FAILED"
 
+
+
+def test_resource_persistence_retries_after_initial_update_failure(
+    client, monkeypatch
+):
+    monkeypatch.setenv("CLOUDEXPIRE_PROVISION_EC2", "true")
+
+    def fake_launch_ec2_instance(instance_type, resource_id, expires_at):
+        return "i-0123456789abcdef0"
+
+    monkeypatch.setattr(
+        "app.services.resource_service.launch_ec2_instance",
+        fake_launch_ec2_instance,
+    )
+
+    original_update = repository_module.resource_repository.update
+    calls = {"count": 0}
+
+    def fail_once_then_update(resource):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("Simulated transient persistence failure")
+        return original_update(resource)
+
+    monkeypatch.setattr(
+        "app.services.resource_service.resource_repository.update",
+        fail_once_then_update,
+    )
+
+    response = client.post(
+        "/resources",
+        json={
+            "name": "persistence-retry-test",
+            "resource_type": "ec2",
+            "ttl_hours": 1,
+            "instance_type": "t3.micro",
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["status"] == "ACTIVE"
+    assert data["aws_resource_id"] == "i-0123456789abcdef0"
+    assert calls["count"] == 2
+
