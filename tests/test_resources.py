@@ -6,9 +6,12 @@ from app.main import app
 from app.repositories import resource_repository as repository_module
 from app.repositories.resource_repository import InMemoryResourceRepository
 
+AUTH_HEADERS = {"Authorization": "Bearer test-token-123"}
+
 
 @pytest.fixture()
 def client(monkeypatch):
+    monkeypatch.setenv("CLOUDEXPIRE_API_TOKEN", "test-token-123")
     test_repository = InMemoryResourceRepository()
 
     monkeypatch.setattr(
@@ -38,6 +41,7 @@ def test_create_resource_record(client):
             "ttl_hours": 2,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 201
@@ -56,20 +60,21 @@ def test_list_and_get_resources(client):
             "ttl_hours": 2,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
     resource_id = created.json()["resource_id"]
 
-    listed = client.get("/resources")
+    listed = client.get("/resources", headers=AUTH_HEADERS)
     assert listed.status_code == 200
     assert len(listed.json()) == 1
 
-    fetched = client.get(f"/resources/{resource_id}")
+    fetched = client.get(f"/resources/{resource_id}", headers=AUTH_HEADERS,)
     assert fetched.status_code == 200
     assert fetched.json()["resource_id"] == resource_id
 
 
 def test_get_missing_resource(client):
-    response = client.get("/resources/nonexistent")
+    response = client.get("/resources/nonexistent", headers=AUTH_HEADERS,)
     assert response.status_code == 404
 
 
@@ -82,6 +87,7 @@ def test_invalid_ttl_is_rejected(client):
             "ttl_hours": 25,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 422
@@ -99,6 +105,7 @@ def test_provisioning_disabled_keeps_resource_requested(client, monkeypatch):
             "ttl_hours": 1,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 201
@@ -129,6 +136,7 @@ def test_mocked_ec2_provisioning_activates_resource(client, monkeypatch):
             "ttl_hours": 1,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 201
@@ -156,10 +164,11 @@ def test_failed_ec2_provisioning_marks_resource_failed(client, monkeypatch):
             "ttl_hours": 1,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 500
-    resources_response = client.get("/resources")
+    resources_response = client.get("/resources",headers=AUTH_HEADERS,)
     assert resources_response.status_code == 200
 
     failed_records = [
@@ -207,6 +216,7 @@ def test_resource_persistence_retries_after_initial_update_failure(
             "ttl_hours": 1,
             "instance_type": "t3.micro",
         },
+        headers=AUTH_HEADERS,
     )
 
     assert response.status_code == 201
@@ -215,3 +225,34 @@ def test_resource_persistence_retries_after_initial_update_failure(
     assert data["aws_resource_id"] == "i-0123456789abcdef0"
     assert calls["count"] == 2
 
+
+def test_resource_endpoint_rejects_missing_token(client):
+    response = client.get("/resources")
+    assert response.status_code == 401
+
+
+def test_resource_endpoint_rejects_invalid_token(client):
+    response = client.get(
+        "/resources",
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert response.status_code == 401
+
+
+def test_resource_endpoint_accepts_valid_token(client):
+    response = client.get("/resources", headers=AUTH_HEADERS)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_resource_endpoint_fails_closed_without_configured_token(
+    client, monkeypatch
+):
+    monkeypatch.delenv("CLOUDEXPIRE_API_TOKEN", raising=False)
+
+    response = client.get(
+        "/resources",
+        headers=AUTH_HEADERS,
+    )
+
+    assert response.status_code == 503
