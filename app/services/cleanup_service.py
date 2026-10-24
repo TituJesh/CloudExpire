@@ -1,7 +1,7 @@
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -24,6 +24,41 @@ def find_expired_resources():
     ]
 
 
+def reconcile_stale_requested_resources(
+    now: datetime | None = None,
+    grace_minutes: int = 15,
+) -> int:
+    """Mark expired requests without an EC2 ID as FAILED."""
+    if grace_minutes < 0:
+        raise ValueError("grace_minutes must be non-negative")
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+
+    cutoff = now - timedelta(minutes=grace_minutes)
+    failed_count = 0
+
+    for resource in resource_repository.list_all():
+        if (
+            resource.status == "REQUESTED"
+            and resource.aws_resource_id is None
+            and resource.expires_at <= cutoff
+        ):
+            failed_resource = resource.model_copy(
+                update={"status": "FAILED"}
+            )
+            resource_repository.update(failed_resource)
+
+            failed_count += 1
+            logger.warning(
+                "Marked stale request %s as FAILED; "
+                "no EC2 instance ID was recorded",
+                resource.resource_id,
+            )
+
+    return failed_count
+
+
 def cleanup_expired_resources():
     """Safely process expired CloudExpire EC2 resources."""
     expired_resources = find_expired_resources()
@@ -36,6 +71,7 @@ def cleanup_expired_resources():
         "skipped_missing": 0,
         "skipped_unowned": 0,
         "skipped_state": 0,
+        "stale_requests_failed": 0,
         "errors": 0,
         "skipped": False,
     }
@@ -50,6 +86,10 @@ def cleanup_expired_resources():
             result["eligible"],
         )
         return result
+
+    result["stale_requests_failed"] = (
+        reconcile_stale_requested_resources()
+    )
 
     region = os.getenv("AWS_REGION", "ap-south-1")
     ec2 = boto3.client("ec2", region_name=region)
