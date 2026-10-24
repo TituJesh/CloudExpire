@@ -2,6 +2,7 @@
 import hmac
 import os
 
+import boto3
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -12,18 +13,52 @@ from app.services.resource_service import create_resource_record
 app = FastAPI(
     title="CloudExpire",
     description="Automated temporary AWS resource lifecycle manager",
-    version="0.4.0",
+    version="0.5.0",
 )
 
 bearer_scheme = HTTPBearer(auto_error=False)
+_cached_api_token: str | None = None
+
+
+def get_expected_api_token() -> str | None:
+    """Use a local environment token or retrieve the AWS SSM SecureString."""
+    global _cached_api_token
+
+    # Preserve local development and existing authentication tests.
+    environment_token = os.getenv("CLOUDEXPIRE_API_TOKEN")
+    if environment_token:
+        return environment_token
+
+    parameter_name = os.getenv("CLOUDEXPIRE_API_TOKEN_PARAMETER")
+    if not parameter_name:
+        return None
+
+    if _cached_api_token is None:
+        try:
+            ssm = boto3.client(
+                "ssm",
+                region_name=os.getenv("AWS_REGION", "ap-south-1"),
+            )
+            response = ssm.get_parameter(
+                Name=parameter_name,
+                WithDecryption=True,
+            )
+            _cached_api_token = response["Parameter"]["Value"]
+        except Exception as exc:
+            # Never log the token or the returned parameter value.
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="API authentication could not be loaded",
+            ) from exc
+
+    return _cached_api_token
 
 
 def require_api_token(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> None:
-    expected_token = os.getenv("CLOUDEXPIRE_API_TOKEN")
+    expected_token = get_expected_api_token()
 
-    # Fail closed if authentication has not been configured.
     if not expected_token:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
