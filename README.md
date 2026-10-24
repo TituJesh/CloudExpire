@@ -1,4 +1,4 @@
-# ☁️ CloudExpire
+﻿# â˜ï¸ CloudExpire
 
 <p align="center">
   <strong>Automated AWS Resource Lifecycle Management</strong><br>
@@ -6,197 +6,283 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/TituJesh/CloudExpire/actions"><img src="https://img.shields.io/github/actions/workflow/status/TituJesh/CloudExpire/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white" alt="CI Status" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+" /></a>
-  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white" alt="FastAPI" /></a>
-  <a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-Lambda%20%7C%20EC2%20%7C%20DynamoDB-FF9900?logo=amazonaws&logoColor=white" alt="AWS Services" /></a>
-  <a href="https://www.terraform.io/"><img src="https://img.shields.io/badge/Terraform-IaC-844FBA?logo=terraform&logoColor=white" alt="Terraform" /></a>
-  <a href="https://pytest.org/"><img src="https://img.shields.io/badge/Tests-17%20passing-2EA44F?logo=pytest&logoColor=white" alt="17 Tests Passing" /></a>
+  <a href="https://github.com/TituJesh/CloudExpire/actions"><img src="https://img.shields.io/github/actions/workflow/status/TituJesh/CloudExpire/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white" alt="CI Status"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12"></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white" alt="FastAPI"></a>
+  <a href="https://aws.amazon.com/"><img src="https://img.shields.io/badge/AWS-Lambda%20%7C%20EC2%20%7C%20DynamoDB-FF9900?logo=amazonaws&logoColor=white" alt="AWS"></a>
+  <a href="https://www.terraform.io/"><img src="https://img.shields.io/badge/Terraform-IaC-844FBA?logo=terraform&logoColor=white" alt="Terraform"></a>
+  <a href="https://pytest.org/"><img src="https://img.shields.io/badge/Tests-24%20passing-2EA44F?logo=pytest&logoColor=white" alt="24 Tests Passing"></a>
 </p>
 
 ---
 
-## 📌 Overview
+## ðŸ“Œ Overview
 
-Temporary cloud environments frequently outlive their purpose, accumulating unnecessary cloud costs and security surface area. **CloudExpire** solves this by providing automated, TTL-driven lifecycle management for AWS resources.
+Temporary cloud environments can outlive their intended purpose, creating unnecessary cloud costs and an expanded security surface.
 
-Resources are provisioned through a FastAPI service with a defined time-to-live (TTL), tracked in Amazon DynamoDB, and continuously evaluated by a scheduled serverless AWS Lambda janitor that safely terminates expired instances and reconciles state.
+**CloudExpire** is a Python-based AWS resource lifecycle manager that provisions temporary EC2 instances, tracks their expiration times, and automatically cleans up eligible resources.
 
----
+A FastAPI application handles resource requests, Amazon DynamoDB stores lifecycle metadata, and a scheduled AWS Lambda cleanup function evaluates expired resources. Amazon EventBridge triggers the cleanup process every five minutes.
 
-## ✨ Key Capabilities
+The project combines API development, infrastructure as code, serverless automation, automated testing, and resource-level safety controls.
 
-- ⚡ **Temporary EC2 Provisioning** — Request and launch TTL-bounded EC2 instances via REST endpoints.
-- ⏱️ **TTL Tracking** — Enforces creation and expiration timestamps stored in DynamoDB.
-- 🧹 **Automated Janitor** — EventBridge triggers a Lambda cleaner every 5 minutes to sweep expired resources.
-- 🛡️ **Zero-Accident Safety Controls** — 3-point ownership tag validation (`Project`, `ManagedBy`, `ResourceId`) prevents rogue terminations.
-- 🔄 **Lifecycle State Reconciliation** — Auto-transitions state from `ACTIVE` ➔ `CLEANUP_PENDING` ➔ `CLEANED`.
-- 📊 **Operational Observability** — Emits structured JSON metrics and run summaries directly to CloudWatch Logs.
-- 🏗️ **Infrastructure as Code** — 100% reproducible AWS infrastructure defined with Terraform.
-- 🧪 **Comprehensive CI Testing** — 17 unit and integration tests verified via GitHub Actions.
+## âœ¨ Key Capabilities
 
----
+- âš¡ **Temporary EC2 Provisioning** â€” Request EC2 instances through REST endpoints with a configurable TTL of 1â€“24 hours.
+- â±ï¸ **TTL Tracking** â€” Store creation and expiration timestamps alongside resource metadata in DynamoDB.
+- ðŸ§¹ **Automated Cleanup** â€” EventBridge invokes a cleanup Lambda every five minutes to process eligible expired resources.
+- ðŸ›¡ï¸ **Ownership Validation** â€” Validate resource ownership tags before performing destructive EC2 operations.
+- ðŸ”„ **Lifecycle Reconciliation** â€” Track resource states, including `REQUESTED`, `ACTIVE`, `CLEANUP_PENDING`, `CLEANED`, and `FAILED`.
+- ðŸ©º **Stale-Request Recovery** â€” Mark sufficiently old requests without an associated EC2 instance as `FAILED`.
+- ðŸ“Š **Operational Observability** â€” Emit structured execution summaries to CloudWatch Logs.
+- ðŸ—ï¸ **Infrastructure as Code** â€” Define AWS infrastructure using Terraform.
+- ðŸ§ª **Automated Testing** â€” Run unit and integration tests through pytest and GitHub Actions.
 
-## 🏛️ Architecture & Lifecycles
+## ðŸ›ï¸ Architecture & Lifecycles
 
 <details>
-<summary><b>📐 System Architecture Diagram (Click to expand)</b></summary>
+<summary><strong>ðŸ“ System Architecture Diagram</strong></summary>
 
 ```mermaid
 flowchart TD
-    U[Developer / API Client] -->|HTTP REST| API[FastAPI]
-    API --> RS[Resource Service]
-    RS -->|Provision & Tag| EC2[Amazon EC2]
-    RS -->|Store Metadata & TTL| DB[(Amazon DynamoDB)]
-    
-    EB[Amazon EventBridge<br/><i>Every 5 mins</i>] -->|Scheduled Trigger| L[AWS Lambda<br/>Cleanup Handler]
-    L -->|Find Expired Records| DB
-    L -->|Verify Ownership & Terminate| EC2
-    L -->|Reconcile Status| DB
-    L -->|Structured Audit Logs| CW[Amazon CloudWatch Logs]
+    U[Developer / API Client] -->|HTTPS REST| APIGW[Amazon API Gateway]
+    APIGW -->|Invoke| API[AWS Lambda - FastAPI]
+    API --> AUTH[Bearer Token Validation]
+    AUTH --> RS[Resource Service]
 
-    TF[Terraform IaC] -. provisions .-> EB
-    TF -. provisions .-> L
-    TF -. provisions .-> DB
-    TF -. configures .-> CW
+    RS -->|Provision when enabled| EC2[Amazon EC2]
+    RS -->|Store metadata and expiry| DB[(Amazon DynamoDB)]
+
+    SSM[AWS Systems Manager Parameter Store] -->|SecureString token| API
+
+    EB[Amazon EventBridge<br/>Every 5 minutes] -->|Scheduled trigger| CLEAN[AWS Lambda - Cleanup Handler]
+    CLEAN -->|Find eligible records| DB
+    CLEAN -->|Validate tags and terminate| EC2
+    CLEAN -->|Reconcile lifecycle state| DB
+    CLEAN --> CW[Amazon CloudWatch Logs]
+
+    TF[Terraform] -. Manages infrastructure .-> APIGW
+    TF -. Manages infrastructure .-> API
+    TF -. Manages infrastructure .-> CLEAN
+    TF -. Manages infrastructure .-> DB
+    TF -. Configures schedule and permissions .-> EB
 ```
 
 </details>
 
 <details>
-<summary><b>🔄 Resource Lifecycle State Machine (Click to expand)</b></summary>
+<summary><strong>ðŸ”„ Resource Lifecycle State Machine</strong></summary>
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Request: POST /resources
-    Request --> ACTIVE: Validate & Store in DynamoDB (EC2 Provisioned)
-    ACTIVE --> Expired: TTL Reached (expires_at <= now)
-    Expired --> OwnershipCheck: EventBridge triggers Lambda
-    OwnershipCheck --> CLEANUP_PENDING: Tags Validated & Terminate Dispatched
-    OwnershipCheck --> ACTIVE: Mismatched Tags (Skipped)
-    CLEANUP_PENDING --> CLEANED: Instance Terminated & Reconciled
+    [*] --> REQUESTED: POST /resources
+    REQUESTED --> ACTIVE: Provisioning succeeds
+    REQUESTED --> FAILED: Stale request without instance ID
+    ACTIVE --> CLEANUP_PENDING: Expiration reached
+    CLEANUP_PENDING --> CLEANED: Termination confirmed
+    CLEANUP_PENDING --> CLEANUP_PENDING: Reconciliation pending
+    ACTIVE --> ACTIVE: Resource not yet expired
     CLEANED --> [*]
+    FAILED --> [*]
 ```
+
+The cleanup process evaluates expiration timestamps rather than relying on DynamoDB TTL deletion. Stale requests without an EC2 instance ID are marked `FAILED` after the configured grace period.
 
 </details>
 
 <details>
-<summary><b>☁️ AWS Components Breakdown (Click to expand)</b></summary>
+<summary><strong>â˜ï¸ AWS Components</strong></summary>
 
 | Component | Responsibility |
 |---|---|
-| **FastAPI** | REST API for resource registration, status queries, and health checks. |
-| **Amazon EC2** | Compute workloads tagged with TTL lifecycle metadata. |
-| **Amazon DynamoDB** | Fast, serverless NoSQL persistence for resource metadata and expiry timestamps. |
-| **AWS Lambda** | Python 3.12 serverless janitor inspecting and terminating expired resources. |
-| **Amazon EventBridge** | Scheduled rule triggering cleanup execution every 5 minutes. |
-| **Amazon CloudWatch** | Centralized structured JSON logging and audit trails (14-day retention). |
-| **AWS IAM** | Scoped execution policies ensuring least-privilege security. |
-| **Terraform** | Declarative configuration managing all cloud infrastructure. |
+| Amazon API Gateway | Exposes the HTTP API endpoint. |
+| AWS Lambda â€” API | Runs the FastAPI application. |
+| Amazon EC2 | Hosts temporary compute resources. |
+| Amazon DynamoDB | Persists resource metadata and expiration timestamps. |
+| AWS Lambda â€” Cleanup | Evaluates expired resources and reconciles lifecycle state. |
+| Amazon EventBridge | Triggers cleanup every five minutes. |
+| AWS Systems Manager Parameter Store | Stores the API bearer token as a SecureString. |
+| Amazon CloudWatch | Collects Lambda logs with configured 14-day retention. |
+| AWS IAM | Restricts service permissions and eligible resource operations. |
+| Terraform | Defines and manages AWS infrastructure. |
 
-> *Note: FastAPI runs locally for development; the cleanup janitor infrastructure is fully deployed to AWS.*
+**Deployment note:** FastAPI runs locally for development and is also deployed through Amazon API Gateway and AWS Lambda. A separate scheduled Lambda function handles expiry checks and cleanup.
 
 </details>
 
----
+## ðŸ›¡ï¸ Safety & Safeguards
 
-## 🛡️ Safety & Safeguards
+CloudExpire uses multiple safeguards to reduce the risk of unintended resource operations.
 
-CloudExpire is engineered with defense-in-depth safeguards against accidental data or resource loss:
+1. **Explicit safety flags:** EC2 provisioning and termination require explicit configuration. Local defaults keep destructive actions disabled unless enabled deliberately.
+2. **Read-only cleanup mode:** When termination is disabled, the cleanup process can inspect eligible records without issuing EC2 termination calls.
+3. **Ownership tag validation:** The cleanup logic validates the expected ownership metadata:
+   - `Project = CloudExpire`
+   - `ManagedBy = CloudExpire`
+   - `ResourceId` matches the registered resource ID.
+4. **State-aware handling:** Unexpected or transitional EC2 states are handled without blindly repeating destructive operations.
+5. **Restricted IAM permissions:** The cleanup role uses scoped permissions and tag-based conditions for eligible EC2 operations.
+6. **Cost controls:** DynamoDB uses on-demand capacity, and CloudWatch log groups have configured retention.
+7. **Provisioning constraints:** EC2 launch configuration restricts eligible instance types and uses explicitly configured AMI, subnet, and security group values.
 
-1. **Safety Flags by Default**: Live EC2 provisioning (`CLOUDEXPIRE_PROVISION_EC2`) and termination (`CLOUDEXPIRE_ALLOW_EC2_TERMINATION`) are **disabled by default**.
-2. **Read-Only Dry-Run Mode**: When termination is disabled, Lambda audits expired items without issuing terminate calls.
-3. **Mandatory 3-Point Tag Check**: Instances are only touched if all 3 ownership tags strictly match:
-   - `Project == "CloudExpire"`
-   - `ManagedBy == "CloudExpire"`
-   - `ResourceId == <registered_id>`
-4. **State-Aware Guards**: Non-destructive behavior for unexpected instance states (e.g., `shutting-down` transitions smoothly to `CLEANUP_PENDING`).
-5. **Cost Controls**: DynamoDB operates on on-demand capacity (`PAY_PER_REQUEST`), and CloudWatch log groups have auto-expiring 14-day retention.
+These safeguards reduce risk but do not guarantee that accidental changes or AWS charges are impossible. Review IAM policies, resource tags, network settings, and environment flags before using the project in a new AWS account.
 
----
-
-## 🚀 Getting Started
+## ðŸš€ Getting Started
 
 ### Prerequisites
-- Python 3.12+
-- AWS CLI configured with active credentials (`aws sts get-caller-identity`)
-- Terraform 1.5+
 
-### Quick Setup
+- Python 3.12
+- AWS CLI configured with appropriate credentials if using AWS services
+- Terraform 1.6 or later
+- An AWS account and an appropriate AWS region
+- Docker with Python 3.12 support for building the cleanup Lambda package as configured in the project
 
-```bash
-# 1. Clone repository
+### Local Setup
+
+```powershell
+# Clone the repository
 git clone https://github.com/TituJesh/CloudExpire.git
 cd CloudExpire
 
-# 2. Set up virtual environment
+# Create and activate a virtual environment
 python -m venv .venv
-# Windows: .\.venv\Scripts\Activate.ps1 | Linux/Mac: source .venv/bin/activate
+.\.venv\Scripts\Activate.ps1
 
-# 3. Install dependencies
+# Install dependencies
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-# 4. Start local API
+# Run the local API
 python -m uvicorn app.main:app --reload
 ```
 
-- **Interactive API Docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- **Health Probe**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+Open the interactive API documentation at:
+
+- API docs: http://127.0.0.1:8000/docs
+- Health check: http://127.0.0.1:8000/health
+
+The local API can use an in-memory repository for development. Configure DynamoDB and AWS credentials when testing against AWS-backed storage.
 
 ### Running Tests
 
-```bash
+```powershell
 python -m pytest -q --import-mode=importlib
 ```
-> Verified with **17 passing tests** covering request validation, TTL calculation, DynamoDB repository storage, EC2 tag validation, state handling, and Lambda execution.
 
-<details>
-<summary><b>📦 AWS Infrastructure Deployment & Configuration (Click to expand)</b></summary>
+**Latest local test result:** 24 tests passed. One Starlette deprecation warning was reported; it did not cause the test run to fail.
 
-#### Environment Variables
+The tests cover request validation, expiry calculation, repository behavior, EC2 provisioning safeguards, cleanup behavior, and lifecycle state handling.
+
+## ðŸ” API Authentication
+
+The deployed API protects resource endpoints using bearer-token authentication. The health endpoint is available for health checks.
+
+For local development, configure the API token in the environment:
+
+```powershell
+$env:CLOUDEXPIRE_API_TOKEN = "<your-local-api-token>"
+```
+
+Include the token when calling protected endpoints:
+
+```http
+Authorization: Bearer <your-api-token>
+```
+
+In the deployed Lambda configuration, the token is retrieved from AWS Systems Manager Parameter Store using a SecureString parameter. The parameter name is configurable through Terraform; the deployed setup uses `/cloudexpire/prod/api-token`.
+
+The Lambda execution role needs permission to read the configured parameter. Do not commit API tokens, AWS credentials, or other secrets to the repository.
+
+## ðŸ“¦ AWS Infrastructure Deployment
+
+> **Warning:** The following configuration can create billable AWS resources and enable real EC2 provisioning. Review the Terraform plan and your AWS configuration before applying changes.
+
+### Environment Variables
+
+The following example uses PowerShell and the existing DynamoDB table.
+
 ```powershell
 $env:AWS_REGION = "ap-south-1"
 $env:CLOUDEXPIRE_STORAGE = "dynamodb"
 $env:DYNAMODB_TABLE_NAME = "cloudexpire-resources"
+
+$env:CLOUDEXPIRE_PROVISION_EC2 = "true"
+$env:CLOUDEXPIRE_ALLOW_EC2_LAUNCH = "true"
+
 $env:CLOUDEXPIRE_AMI_ID = "<your-ami-id>"
 $env:CLOUDEXPIRE_SUBNET_ID = "<your-subnet-id>"
 $env:CLOUDEXPIRE_SECURITY_GROUP_ID = "<your-security-group-id>"
-
-# Enable real provisioning (only when intended):
-$env:CLOUDEXPIRE_PROVISION_EC2 = "true"
-$env:CLOUDEXPIRE_ALLOW_EC2_LAUNCH = "true"
 ```
 
-#### Terraform Deployment
-```bash
-# Build the Lambda deployment artifact
-.\scripts\build_lambda_package.ps1
+The two provisioning flags serve related but distinct purposes: `CLOUDEXPIRE_PROVISION_EC2` controls the resource service's provisioning path, while `CLOUDEXPIRE_ALLOW_EC2_LAUNCH` is checked by the EC2 launch service.
 
-# Deploy with Terraform
+**For local development, do not enable real provisioning unless you intentionally want to create AWS resources.** Use a suitable test configuration and least-privilege AWS credentials.
+
+### Terraform
+
+From the repository root:
+
+```powershell
 cd terraform
+
 terraform init
+terraform fmt -check
 terraform validate
 terraform plan
+```
+
+Review the plan before applying:
+
+```powershell
 terraform apply
 ```
 
-</details>
+Use the Terraform outputs to obtain the deployed API URL and configured SSM parameter name.
 
----
+The exact API deployment artifact and variable values must match the current Terraform configuration. Do not assume that applying Terraform automatically packages every application source change.
 
-## 📡 API Reference
+### Cleanup Lambda Packaging and Code Deployment
+
+The cleanup Lambda uses Python 3.12. Its dependencies must be packaged for a compatible Lambda runtime and architecture. Use the repository's packaging process and build the artifact in the configured Python 3.12 environment.
+
+The Terraform configuration has a lifecycle rule that ignores changes to the cleanup Lambda's `filename` and `source_code_hash`. **Running `terraform apply` alone will not update the deployed cleanup Lambda code.**
+
+When cleanup code changes:
+
+1. Build the deployment package using the repository's packaging process.
+2. Confirm the ZIP contains the handler and its required dependencies.
+3. Deploy the newly built ZIP to the `cloudexpire-cleanup` Lambda using the appropriate AWS CLI deployment command or deployment process.
+4. Verify the Lambda configuration and review its CloudWatch logs after invocation.
+
+For an existing ZIP artifact, the AWS CLI update operation has this form:
+
+```powershell
+aws lambda update-function-code `
+  --function-name cloudexpire-cleanup `
+  --zip-file fileb://<path-to-cleanup-lambda.zip> `
+  --region ap-south-1
+```
+
+Replace the placeholder with the actual path of the ZIP generated by your packaging process. Do not run this command until the package has been built and reviewed.
+
+The cleanup Lambda's destructive-action flag, `CLOUDEXPIRE_ALLOW_EC2_TERMINATION`, should only be enabled when you intend to permit termination and have verified the IAM restrictions and ownership checks.
+
+## ðŸ“¡ API Reference
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Service health status check |
-| `POST` | `/resources` | Register & provision a temporary resource |
-| `GET` | `/resources` | List all tracked resources |
-| `GET` | `/resources/{id}` | Retrieve details of a specific resource |
+| `GET` | `/health` | Health check |
+| `POST` | `/resources` | Register and optionally provision a temporary resource |
+| `GET` | `/resources` | List tracked resources |
+| `GET` | `/resources/{id}` | Retrieve a resource by ID |
+
+Resource endpoints require bearer-token authentication in the deployed API.
 
 <details>
-<summary><b>📝 Example Payloads (Click to expand)</b></summary>
+<summary><strong>ðŸ“ Example Resource Request and Response</strong></summary>
 
-**Create Resource (`POST /resources`)**:
+**Request â€” `POST /resources`**
+
 ```json
 {
   "name": "cloudexpire-demo",
@@ -206,82 +292,94 @@ terraform apply
 }
 ```
 
-**Response (`201 Created`)**:
+**Illustrative response â€” `201 Created`**
+
 ```json
 {
-  "resource_id": "ce-ec2-7f9a1b2c",
+  "resource_id": "ce-example-resource-id",
   "name": "cloudexpire-demo",
   "resource_type": "ec2",
   "instance_type": "t3.micro",
-  "aws_resource_id": "i-0a1b2c3d4e5f67890",
+  "aws_resource_id": "i-0123456789abcdef0",
   "status": "ACTIVE",
   "created_at": "2026-10-22T12:00:00Z",
   "expires_at": "2026-10-22T13:00:00Z"
 }
 ```
 
+The IDs and timestamps above are illustrative examples, not identifiers from a real request.
+
 </details>
 
----
+## ðŸ§ª Verification & End-to-End Validation
 
-## 🧪 Verification & E2E Validation
-
-| Verification Check | Result | Details |
+| Verification | Result | Details |
 |---|---|---|
-| **Python Unit & Integration Tests** | ✅ Passed | 17/17 tests passing with mocked AWS SDK |
-| **CI / CD Pipeline** | ✅ Passed | GitHub Actions builds and passes on every push |
-| **Terraform Configuration** | ✅ Passed | Validated and cleanly provisions all resources |
-| **DynamoDB Persistence** | ✅ Verified | Accurate TTL & metadata storage |
-| **Scheduled EventBridge + Lambda** | ✅ Verified | Automatic 5-minute trigger executed |
-| **CloudWatch Observability** | ✅ Verified | Structured JSON records emitted per execution |
-| **End-to-End EC2 Termination** | ✅ Verified | Expired EC2 instance safely terminated and reconciled to `CLEANED` |
+| Python unit and integration tests | âœ… Passed | 24 tests passed locally |
+| Terraform formatting and validation | âœ… Passed | Formatting and configuration validation checked |
+| DynamoDB persistence | âœ… Verified | Resource metadata and lifecycle state persisted |
+| Scheduled EventBridge trigger | âœ… Verified | Five-minute scheduled invocations observed |
+| CloudWatch observability | âœ… Verified | Structured cleanup execution summaries logged |
+| EC2 end-to-end cleanup | âœ… Verified | Test instance terminated and lifecycle state reconciled |
 
-> **Real-World E2E Test**: An EC2 instance was launched, tagged, and registered in DynamoDB. Upon simulated expiration, the scheduled Lambda janitor detected the expired record, validated ownership tags, initiated termination, and reconciled DynamoDB status to `CLEANED`.
+### End-to-End EC2 Cleanup Test
 
----
+A real EC2 instance was launched and tagged, with its resource metadata stored in DynamoDB. To test the cleanup path without waiting for the natural expiry time, the recorded `expires_at` timestamp was deliberately backdated.
+
+The cleanup Lambda then detected the eligible record, validated the ownership tags, initiated EC2 termination, and reconciled the resource state to `CLEANED`.
+
+**This validates the cleanup workflow using simulated expiration; it does not mean the instance was allowed to expire naturally.**
+
+The test exercised the AWS integration path, including actual EC2 termination. AWS resources can incur charges, so verify that test instances and other temporary resources have been cleaned up.
+
+## ðŸ“‚ Project Structure
 
 <details>
-<summary><b>📂 Project Directory Structure (Click to expand)</b></summary>
+<summary><strong>View Repository Structure</strong></summary>
 
 ```text
 CloudExpire/
-├── .github/workflows/          # CI/CD GitHub Actions workflow
-├── app/
-│   ├── main.py                 # FastAPI application & route declarations
-│   ├── schemas.py              # Pydantic models for request/response validation
-│   ├── repositories/
-│   │   └── resource_repository.py  # DynamoDB & In-Memory persistence layers
-│   └── services/
-│       ├── cleanup_service.py  # Core janitor logic & safety tag evaluations
-│       ├── ec2_service.py      # EC2 provisioning & tagging integration
-│       ├── expiry.py           # Expiry & TTL date calculation utilities
-│       └── resource_service.py # Lifecycle orchestration service
-├── lambda/
-│   └── src/
-│       └── cleanup_handler.py  # AWS Lambda entrypoint with structured logging
-├── scripts/
-│   └── build_lambda_package.ps1 # Lambda packaging script
-├── terraform/
-│   ├── main.tf                 # Complete IaC (DynamoDB, Lambda, EventBridge, IAM)
-├── tests/
-│   ├── test_cleanup_execution.py # Tests for cleanup & safety controls
-│   ├── test_ec2_service.py       # Tests for EC2 provisioning logic
-│   └── ...
-├── requirements.txt            # Python dependencies
-└── README.md
+â”œâ”€â”€ .github/
+â”‚   â””â”€â”€ workflows/
+â”‚       â””â”€â”€ ci.yml                  # GitHub Actions test workflow
+â”œâ”€â”€ app/
+â”‚   â”œâ”€â”€ main.py                     # FastAPI application and routes
+â”‚   â”œâ”€â”€ schemas.py                  # Request and response models
+â”‚   â”œâ”€â”€ repositories/
+â”‚   â”‚   â””â”€â”€ resource_repository.py  # In-memory and DynamoDB persistence
+â”‚   â””â”€â”€ services/
+â”‚       â”œâ”€â”€ cleanup_service.py      # Cleanup and lifecycle reconciliation
+â”‚       â”œâ”€â”€ ec2_service.py          # EC2 provisioning and tagging
+â”‚       â”œâ”€â”€ expiry.py               # TTL and expiry calculations
+â”‚       â””â”€â”€ resource_service.py     # Resource lifecycle orchestration
+â”œâ”€â”€ lambda/
+â”‚   â”œâ”€â”€ cleanup-requirements.txt    # Cleanup Lambda dependencies
+â”‚   â””â”€â”€ src/
+â”‚       â””â”€â”€ cleanup_handler.py      # Cleanup Lambda entry point
+â”œâ”€â”€ scripts/
+â”‚   â””â”€â”€ build_lambda_package.ps1    # Lambda packaging script
+â”œâ”€â”€ terraform/
+â”‚   â””â”€â”€ main.tf                     # AWS infrastructure configuration
+â”œâ”€â”€ tests/
+â”‚   â”œâ”€â”€ test_cleanup_execution.py
+â”‚   â”œâ”€â”€ test_cleanup_service.py
+â”‚   â”œâ”€â”€ test_ec2_service.py
+â”‚   â””â”€â”€ ...
+â”œâ”€â”€ requirements.txt                # Application dependencies
+â””â”€â”€ README.md
 ```
 
 </details>
 
----
-
-## 👤 Author
+## ðŸ‘¤ Author
 
 **Titu Jeshurun B.**  
-*Aspiring Cloud & DevOps Engineer*  
-- **GitHub**: [@TituJesh](https://github.com/TituJesh)  
-- **Repository**: [CloudExpire](https://github.com/TituJesh/CloudExpire)
+Aspiring Cloud & DevOps Engineer
+
+- **GitHub:** [@TituJesh](https://github.com/TituJesh)
+- **Repository:** [CloudExpire](https://github.com/TituJesh/CloudExpire)
 
 <p align="center">
-  <sub>Built with focus on cloud automation, cost optimization, and safe engineering practices.</sub>
+  <sub>Built with a focus on cloud automation, cost optimization, and safe engineering practices.</sub>
 </p>
+
