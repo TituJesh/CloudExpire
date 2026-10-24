@@ -29,3 +29,16 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Generated API Lambda deployment package
+lambda/api_package/
+terraform/cloudexpire-api.zip
+
+# Temporary AWS testing artifacts
+terraform/cleanup-result.json
+terraform/cleanup-result-2.json
+terraform/dynamodb-key.json
+terraform/dynamodb-values.json
+
+# Generated Lambda deployment packages
+terraform/cloudexpire-cleanup-deployed.zip
