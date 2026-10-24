@@ -42,3 +42,4 @@ terraform/dynamodb-values.json
 
 # Generated Lambda deployment packages
 terraform/cloudexpire-cleanup-deployed.zip
+lambda/package_build/
