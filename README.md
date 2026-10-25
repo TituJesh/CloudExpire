@@ -40,8 +40,10 @@ The project combines API development, infrastructure as code, serverless automat
 
 ## Architecture & Lifecycles
 
+![CloudExpire Architecture](docs/images/architecture-diagram.png)
+
 <details>
-<summary><strong>System Architecture Diagram</strong></summary>
+<summary><strong>System Architecture Flowchart (Mermaid)</strong></summary>
 
 ```mermaid
 flowchart TD
@@ -352,6 +354,9 @@ CloudExpire/
 │       ├── ec2_service.py          # EC2 provisioning and tagging
 │       ├── expiry.py               # TTL and expiry calculations
 │       └── resource_service.py     # Resource lifecycle orchestration
+├── docs/
+│   └── images/
+│       └── architecture-diagram.png # Architecture and CI/CD diagram
 ├── lambda/
 │   ├── cleanup-requirements.txt    # Cleanup Lambda dependencies
 │   └── src/
