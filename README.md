@@ -80,6 +80,34 @@ stateDiagram-v2
 
 ---
 
+## Account Ownership and Future Enhancements
+
+### Which AWS Account Owns the Allocated Resources?
+
+CloudExpire currently provisions temporary EC2 instances in the AWS account where the application is deployed and authorized to operate. Users can submit resource requests through the API using an authorized bearer token without needing to provide their own AWS credentials.
+
+The API Lambda uses its IAM execution role to provision EC2 instances, while DynamoDB tracks resource metadata and expiration timestamps. A scheduled cleanup Lambda identifies eligible resources and terminates them according to the project's cleanup logic.
+
+**Important:** API authentication controls who can request resources from CloudExpire, while AWS IAM permissions determine which AWS account the application can access. A user's separate AWS account is not automatically used when they submit a request.
+
+### Future Enhancement: Cross-Account Resource Provisioning
+
+A planned enhancement is to support provisioning resources directly within users' own AWS accounts using **AWS IAM cross-account roles and AWS Security Token Service (STS)**.
+
+With this approach, a user would explicitly authorize CloudExpire to assume a dedicated IAM role in their AWS account. CloudExpire could then use temporary, scoped credentials to provision and manage resources within the authorized account, subject to the role's permissions.
+
+Potential improvements include:
+
+- Cross-account EC2 provisioning and lifecycle management.
+- Least-privilege IAM roles and temporary credentials.
+- Account-specific resource tracking and cleanup.
+- Per-user authentication, resource quotas, and usage controls.
+- Improved cost visibility and safeguards against unauthorized resource creation.
+
+Cross-account provisioning is a future enhancement and is not part of the current implementation.
+
+---
+
 ## Getting Started
 
 ### Prerequisites
