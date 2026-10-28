@@ -1,14 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/images/cloudexpire-logo-dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="docs/images/cloudexpire-logo-light.png">
-    <img src="docs/images/cloudexpire-logo.png" alt="CloudExpire" width="360">
-  </picture>
-</p>
-
-<p align="center">
-  <strong>Automated AWS Resource Lifecycle Management</strong><br>
-  <em>Provision temporary AWS resources. Track their expiry. Clean them up automatically.</em>
+  <img src="docs/images/cloudexpire-header.png" alt="CloudExpire">
 </p>
 
 <p align="center">
